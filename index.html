@@ -1,0 +1,567 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arix Signature Tree - Final</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lato:wght@300;400&display=swap" rel="stylesheet">
+    
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #000;
+        font-family: 'Lato', sans-serif;
+        overflow: hidden;
+      }
+      h1, h2, h3, .font-serif {
+        font-family: 'Playfair Display', serif;
+      }
+      
+      @keyframes fade-in-down {
+        0% { opacity: 0; transform: translateY(-20px); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-in-down {
+        animation: fade-in-down 1s ease-out forwards;
+      }
+
+      @keyframes shine {
+        100% {
+          transform: translateX(100%);
+        }
+      }
+    </style>
+    
+    <!-- Import Map: Cleaned to ensure ONLY React 18.3.1 is loaded -->
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "three": "https://esm.sh/three@0.160.0",
+    "@react-three/fiber": "https://esm.sh/@react-three/fiber@8.15.16?external=react,react-dom,three",
+    "@react-three/drei": "https://esm.sh/@react-three/drei@9.99.0?external=react,react-dom,three,@react-three/fiber",
+    "@react-three/postprocessing": "https://esm.sh/@react-three/postprocessing@2.16.0?external=react,react-dom,three,@react-three/fiber,postprocessing",
+    "postprocessing": "https://esm.sh/postprocessing@6.34.1?external=three",
+    "uuid": "https://esm.sh/uuid@9.0.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/"
+  }
+}
+</script>
+    
+    <!-- Babel for JSX (Only for transforming code in browser) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+      import React, { useState, useMemo, useRef, useLayoutEffect } from 'react';
+      import { createRoot } from 'react-dom/client';
+      import * as THREE from 'three';
+      import { Canvas, useFrame } from '@react-three/fiber';
+      import { OrbitControls, PerspectiveCamera, Environment, ContactShadows } from '@react-three/drei';
+      import { EffectComposer, Bloom, Vignette, Noise, ToneMapping } from '@react-three/postprocessing';
+
+      // --- CONSTANTS & TYPES ---
+      
+      const TreeState = {
+        SCATTERED: 'SCATTERED',
+        TREE_SHAPE: 'TREE_SHAPE'
+      };
+
+      const COLORS = {
+        // Bright, Rich Emerald
+        EMERALD_DEEP: "#155E42", 
+        EMERALD_LIGHT: "#1F7A55",
+        
+        RED_VELVET: "#8B1A1A",
+        GOLD_METALLIC: "#FFD700",
+        GOLD_WARM: "#FFD983",
+        SNOW_WHITE: "#FFF8E7",
+        
+        // Dual Backgrounds
+        BG_DARK: "#010806",
+        BG_LIGHT: "#F2F7F5" 
+      };
+
+      const CONFIG = {
+        NEEDLE_COUNT: 4000,
+        GIFT_COUNT: 120,
+        SPHERE_COUNT: 120,
+        MISC_COUNT: 80,
+        SNOW_COUNT: 1500,
+        TREE_HEIGHT: 18,
+        TREE_RADIUS: 6.5,
+        SCATTER_RADIUS: 40,
+        ANIMATION_SPEED: 1.8,
+      };
+
+      const DUMMY_OBJ = new THREE.Object3D();
+
+      // --- UTILS ---
+      
+      function backOut(t) {
+        const s = 1.70158;
+        return --t * t * ((s + 1) * t + s) + 1;
+      }
+
+      // --- COMPONENTS ---
+
+      // 1. SnowParticles
+      const SnowParticles = ({ isDark }) => {
+        const pointsRef = useRef(null);
+        const { positions, velocities } = useMemo(() => {
+          const count = CONFIG.SNOW_COUNT;
+          const pos = new Float32Array(count * 3);
+          const vel = new Float32Array(count * 3);
+          for (let i = 0; i < count; i++) {
+            pos[i * 3] = (Math.random() - 0.5) * 60;
+            pos[i * 3 + 1] = (Math.random() - 0.5) * 50 + 10;
+            pos[i * 3 + 2] = (Math.random() - 0.5) * 60;
+            vel[i * 3] = (Math.random() - 0.5) * 0.04;
+            vel[i * 3 + 1] = -(Math.random() * 0.04 + 0.02);
+            vel[i * 3 + 2] = (Math.random() - 0.5) * 0.04;
+          }
+          return { positions: pos, velocities: vel };
+        }, []);
+
+        useFrame((state) => {
+          if (!pointsRef.current) return;
+          const geom = pointsRef.current.geometry;
+          const posAttr = geom.attributes.position;
+          const posArray = posAttr.array;
+          const time = state.clock.getElapsedTime();
+
+          for (let i = 0; i < CONFIG.SNOW_COUNT; i++) {
+            const ix = i * 3;
+            const iy = i * 3 + 1;
+            const iz = i * 3 + 2;
+            posArray[ix] += velocities[ix] + Math.sin(time + i) * 0.002;
+            posArray[iy] += velocities[iy];
+            posArray[iz] += velocities[iz] + Math.cos(time + i) * 0.002;
+
+            if (posArray[iy] < -12) {
+              posArray[iy] = 35;
+              posArray[ix] = (Math.random() - 0.5) * 60;
+              posArray[iz] = (Math.random() - 0.5) * 60;
+            }
+          }
+          posAttr.needsUpdate = true;
+        });
+
+        const texture = useMemo(() => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 32;
+          canvas.height = 32;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+            grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 32, 32);
+          }
+          return new THREE.CanvasTexture(canvas);
+        }, []);
+        
+        return (
+          <points ref={pointsRef}>
+            <bufferGeometry>
+              <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
+            </bufferGeometry>
+            <pointsMaterial 
+                map={texture} 
+                size={0.4} 
+                color={COLORS.SNOW_WHITE} 
+                transparent 
+                opacity={0.8} 
+                blending={THREE.AdditiveBlending} 
+                depthWrite={false} 
+                sizeAttenuation={true} 
+                alphaTest={0.01} 
+            />
+          </points>
+        );
+      };
+
+      // 2. InteractiveTree
+      const InteractiveTree = ({ state }) => {
+        const needlesRef = useRef(null);
+        const boxesRef = useRef(null);
+        const ribbonsRef = useRef(null);
+        const spheresRef = useRef(null);
+        const conesRef = useRef(null);
+        const smallStarsRef = useRef(null);
+        const starRef = useRef(null);
+        const progressRef = useRef(0);
+
+        // Materials - Sharpened for clarity
+        const foliageMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+          color: COLORS.EMERALD_DEEP,
+          roughness: 0.6, 
+          metalness: 0.2, 
+          flatShading: true,
+          envMapIntensity: 0.8
+        }), []);
+
+        const boxMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+          roughness: 0.3,
+          metalness: 0.1,
+          envMapIntensity: 0.5
+        }), []);
+
+        const goldMaterialProps = {
+          color: new THREE.Color(COLORS.GOLD_METALLIC),
+          emissive: new THREE.Color(COLORS.GOLD_WARM),
+          emissiveIntensity: 0.2,
+          roughness: 0.15,
+          metalness: 0.9,
+          envMapIntensity: 1.5,
+        };
+
+        const generateTreePosition = (ratio, radiusOffset = 0) => {
+          const y = (ratio * CONFIG.TREE_HEIGHT) - (CONFIG.TREE_HEIGHT / 2);
+          const rBase = (1 - ratio) * CONFIG.TREE_RADIUS + radiusOffset;
+          const angle = ratio * Math.PI * 20 + (Math.random() * Math.PI * 2);
+          const x = Math.cos(angle) * rBase;
+          const z = Math.sin(angle) * rBase;
+          return new THREE.Vector3(x, y, z);
+        };
+
+        const generateScatterPosition = () => {
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos((Math.random() * 2) - 1);
+          const r = Math.cbrt(Math.random()) * CONFIG.SCATTER_RADIUS;
+          return new THREE.Vector3(
+            r * Math.sin(phi) * Math.cos(theta),
+            r * Math.sin(phi) * Math.sin(theta),
+            r * Math.cos(phi)
+          );
+        };
+
+        const { needles, boxes, ribbons, spheres, cones, smallStars, starData } = useMemo(() => {
+          const _needles = [], _boxes = [], _ribbons = [], _spheres = [], _cones = [], _smallStars = [];
+
+          // Needles
+          for (let i = 0; i < CONFIG.NEEDLE_COUNT; i++) {
+            const ratio = Math.pow(i / CONFIG.NEEDLE_COUNT, 0.8);
+            const y = (ratio * CONFIG.TREE_HEIGHT) - (CONFIG.TREE_HEIGHT / 2);
+            const r = (1 - ratio) * CONFIG.TREE_RADIUS;
+            const angle = i * 0.1 + Math.random();
+            const rJitter = r * (0.8 + Math.random() * 0.4);
+            _needles.push({
+              id: i,
+              type: 'NEEDLE',
+              treePosition: new THREE.Vector3(Math.cos(angle) * rJitter, y, Math.sin(angle) * rJitter),
+              scatterPosition: generateScatterPosition(),
+              rotation: new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, 0),
+              rotationSpeed: 0.05,
+              scale: new THREE.Vector3(1, 1, 1).multiplyScalar(Math.random() * 0.3 + 0.2),
+              color: new THREE.Color(Math.random() > 0.6 ? COLORS.EMERALD_DEEP : COLORS.EMERALD_LIGHT),
+              speed: Math.random() * 0.2 + 0.1,
+              phase: Math.random() * Math.PI * 2
+            });
+          }
+
+          // Gifts (50%)
+          for (let i = 0; i < CONFIG.GIFT_COUNT; i++) {
+            const ratio = Math.random() * 0.85;
+            const pos = generateTreePosition(ratio, 0.5);
+            const scatter = generateScatterPosition();
+            const scale = Math.random() * 0.4 + 0.5;
+            const color = Math.random() > 0.5 ? COLORS.EMERALD_DEEP : COLORS.RED_VELVET;
+            const rot = new THREE.Euler(0, Math.random() * Math.PI * 2, 0);
+            
+            _boxes.push({
+              id: i, type: 'BOX', treePosition: pos, scatterPosition: scatter, rotation: rot, rotationSpeed: 0.1,
+              scale: new THREE.Vector3(scale, scale, scale), color: new THREE.Color(color), speed: Math.random() * 0.3, phase: Math.random() * 10
+            });
+            _ribbons.push({
+              id: i, type: 'RIBBON', treePosition: pos, scatterPosition: scatter, rotation: rot, rotationSpeed: 0.1,
+              scale: new THREE.Vector3(scale, scale, scale), color: new THREE.Color(COLORS.GOLD_WARM), speed: Math.random() * 0.3, phase: Math.random() * 10
+            });
+          }
+
+          // Spheres (30%)
+          for (let i = 0; i < CONFIG.SPHERE_COUNT; i++) {
+            const ratio = Math.random() * 0.95;
+            const pos = generateTreePosition(ratio, 0.2);
+            const scatter = generateScatterPosition();
+            let col = COLORS.GOLD_METALLIC;
+            const rnd = Math.random();
+            if (rnd < 0.3) col = COLORS.RED_VELVET;
+            else if (rnd < 0.6) col = COLORS.EMERALD_LIGHT;
+
+            _spheres.push({
+              id: i, type: 'SPHERE', treePosition: pos, scatterPosition: scatter, 
+              rotation: new THREE.Euler(Math.random()*Math.PI, Math.random()*Math.PI, 0), rotationSpeed: Math.random() * 0.5,
+              scale: new THREE.Vector3(0.35, 0.35, 0.35), color: new THREE.Color(col), speed: Math.random() * 0.2, phase: i
+            });
+          }
+
+          // Misc (20%)
+          for (let i = 0; i < CONFIG.MISC_COUNT; i++) {
+            const ratio = Math.random() * 0.9;
+            const pos = generateTreePosition(ratio, 0.3);
+            const scatter = generateScatterPosition();
+            const common = {
+              id: i, treePosition: pos, scatterPosition: scatter,
+              rotation: new THREE.Euler(Math.random()*Math.PI, Math.random()*Math.PI, 0), rotationSpeed: Math.random() * 0.4,
+              speed: Math.random() * 0.2, phase: i
+            };
+            const typeRnd = Math.random();
+            if (typeRnd < 0.4) {
+              _cones.push({ ...common, type: 'CONE', scale: new THREE.Vector3(0.3, 0.3, 0.3), color: new THREE.Color(COLORS.GOLD_METALLIC) });
+            } else if (typeRnd < 0.7) {
+              _smallStars.push({ ...common, type: 'SMALL_STAR', scale: new THREE.Vector3(0.4, 0.4, 0.4), color: new THREE.Color(COLORS.GOLD_WARM) });
+            } else {
+              _ribbons.push({ ...common, type: 'RIBBON', scale: new THREE.Vector3(0.6, 0.6, 0.6), color: new THREE.Color(COLORS.GOLD_WARM) });
+            }
+          }
+
+          const starData = {
+            id: 9999, type: 'STAR',
+            treePosition: new THREE.Vector3(0, CONFIG.TREE_HEIGHT / 2 + 1, 0),
+            scatterPosition: generateScatterPosition(),
+            rotation: new THREE.Euler(0, 0, 0), rotationSpeed: 0.5,
+            scale: new THREE.Vector3(1.8, 1.8, 1.8), color: new THREE.Color(COLORS.GOLD_METALLIC),
+            speed: 0.2, phase: 0
+          };
+
+          return { needles: _needles, boxes: _boxes, ribbons: _ribbons, spheres: _spheres, cones: _cones, smallStars: _smallStars, starData };
+        }, []);
+
+        useLayoutEffect(() => {
+          const apply = (ref, data) => {
+            if (!ref.current) return;
+            data.forEach((p, i) => ref.current.setColorAt(i, p.color));
+            ref.current.instanceColor.needsUpdate = true;
+          };
+          apply(needlesRef, needles);
+          apply(boxesRef, boxes);
+          apply(spheresRef, spheres);
+          apply(conesRef, cones);
+          apply(smallStarsRef, smallStars);
+          apply(ribbonsRef, ribbons);
+        }, [needles, boxes, ribbons, spheres, cones, smallStars]);
+
+        useFrame((stateCtx, delta) => {
+          const target = state === TreeState.TREE_SHAPE ? 1 : 0;
+          progressRef.current = THREE.MathUtils.lerp(progressRef.current, target, delta * CONFIG.ANIMATION_SPEED);
+          const t = progressRef.current;
+          const time = stateCtx.clock.getElapsedTime();
+
+          const updateMesh = (ref, data, type) => {
+            if (!ref.current) return;
+            data.forEach((p, i) => {
+              DUMMY_OBJ.position.lerpVectors(p.scatterPosition, p.treePosition, t);
+              if (t < 0.99) {
+                const float = (1 - t);
+                DUMMY_OBJ.position.y += Math.sin(time * p.speed + p.phase) * float;
+                DUMMY_OBJ.position.x += Math.cos(time * 0.5 + p.phase) * float * 0.5;
+                DUMMY_OBJ.rotation.x = p.rotation.x + time * p.rotationSpeed * float;
+                DUMMY_OBJ.rotation.y = p.rotation.y + time * p.rotationSpeed * float;
+              } else {
+                DUMMY_OBJ.rotation.copy(p.rotation);
+                if (type === 'BOX' || type === 'RIBBON' || type === 'SMALL_STAR') {
+                  DUMMY_OBJ.rotation.y += Math.sin(time * 0.5 + p.phase) * 0.05;
+                }
+              }
+              
+              const staggerStart = (i % 50) / 50;
+              const smoothT = THREE.MathUtils.smoothstep(t, staggerStart * 0.2, 1.0);
+              let s = p.scale.x;
+              if (type === 'NEEDLE') s *= smoothT;
+              else if (type === 'BOX' || type === 'RIBBON' || type === 'SMALL_STAR') s *= backOut(smoothT);
+              else s *= smoothT;
+              
+              DUMMY_OBJ.scale.setScalar(s);
+              if (type === 'CONE') DUMMY_OBJ.scale.y *= 2.5;
+              DUMMY_OBJ.updateMatrix();
+              ref.current.setMatrixAt(i, DUMMY_OBJ.matrix);
+            });
+            ref.current.instanceMatrix.needsUpdate = true;
+          };
+
+          updateMesh(needlesRef, needles, 'NEEDLE');
+          updateMesh(boxesRef, boxes, 'BOX');
+          updateMesh(ribbonsRef, ribbons, 'RIBBON');
+          updateMesh(spheresRef, spheres, 'SPHERE');
+          updateMesh(conesRef, cones, 'CONE');
+          updateMesh(smallStarsRef, smallStars, 'SMALL_STAR');
+
+          if (starRef.current) {
+            const p = starData;
+            starRef.current.position.lerpVectors(p.scatterPosition, p.treePosition, t);
+            if (t < 0.99) {
+              starRef.current.position.y += Math.sin(time) * 0.5 * (1-t);
+              starRef.current.rotation.y += delta;
+              starRef.current.rotation.z += delta * 0.5;
+            } else {
+              starRef.current.rotation.set(0, time * 0.5, 0);
+            }
+            const scalePulse = 1 + Math.sin(time * 3) * 0.1;
+            starRef.current.scale.setScalar(p.scale.x * scalePulse);
+          }
+        });
+
+        const starGeometry = useMemo(() => {
+          const shape = new THREE.Shape();
+          const points = 5, outerRadius = 1, innerRadius = 0.4;
+          for (let i = 0; i < points * 2; i++) {
+            const r = (i % 2 === 0) ? outerRadius : innerRadius;
+            const a = (i / (points * 2)) * Math.PI * 2;
+            const x = Math.cos(a) * r, y = Math.sin(a) * r;
+            if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+          }
+          shape.closePath();
+          return new THREE.ExtrudeGeometry(shape, { depth: 0.3, bevelEnabled: true, bevelThickness: 0.1, bevelSize: 0.05, bevelSegments: 3 });
+        }, []);
+
+        return (
+          <group>
+            <instancedMesh ref={needlesRef} args={[undefined, undefined, CONFIG.NEEDLE_COUNT]} castShadow receiveShadow>
+              <tetrahedronGeometry args={[1, 0]} />
+              <primitive object={foliageMaterial} />
+            </instancedMesh>
+            <instancedMesh ref={boxesRef} args={[undefined, undefined, boxes.length]} castShadow>
+              <boxGeometry args={[1, 1, 1]} />
+              <primitive object={boxMaterial} />
+            </instancedMesh>
+            <instancedMesh ref={ribbonsRef} args={[undefined, undefined, ribbons.length]}>
+              <torusKnotGeometry args={[0.3, 0.08, 64, 8]} />
+              <meshStandardMaterial {...goldMaterialProps} color={COLORS.GOLD_WARM} />
+            </instancedMesh>
+            <instancedMesh ref={spheresRef} args={[undefined, undefined, spheres.length]} castShadow>
+              <sphereGeometry args={[1, 32, 32]} />
+              <meshStandardMaterial {...goldMaterialProps} color={undefined} />
+            </instancedMesh>
+            <instancedMesh ref={conesRef} args={[undefined, undefined, cones.length]} castShadow>
+              <coneGeometry args={[0.3, 1.5, 16]} />
+              <meshStandardMaterial {...goldMaterialProps} color={COLORS.GOLD_METALLIC} />
+            </instancedMesh>
+            <instancedMesh ref={smallStarsRef} args={[undefined, undefined, smallStars.length]}>
+              <primitive object={starGeometry} />
+              <meshStandardMaterial {...goldMaterialProps} color={COLORS.GOLD_WARM} />
+            </instancedMesh>
+            <group ref={starRef}>
+              <mesh geometry={starGeometry}>
+                <meshStandardMaterial color={COLORS.GOLD_METALLIC} emissive={COLORS.GOLD_WARM} emissiveIntensity={2.0} metalness={1.0} roughness={0.1} envMapIntensity={2.0} />
+              </mesh>
+              <pointLight intensity={5} color={COLORS.GOLD_WARM} distance={10} decay={2} />
+            </group>
+          </group>
+        );
+      };
+
+      // 3. Experience
+      const Experience = ({ treeState, isDark }) => {
+        return (
+          <Canvas shadows dpr={[1, 2]} gl={{ antialias: false, toneMappingExposure: 1.1, powerPreference: "high-performance" }}>
+            <color attach="background" args={[isDark ? COLORS.BG_DARK : COLORS.BG_LIGHT]} />
+            
+            <PerspectiveCamera makeDefault position={[0, 0, 38]} fov={32} />
+            <OrbitControls minPolarAngle={Math.PI / 2.8} maxPolarAngle={Math.PI / 1.8} minDistance={20} maxDistance={60} enablePan={false} autoRotate={treeState === TreeState.TREE_SHAPE} autoRotateSpeed={0.5} dampingFactor={0.05} />
+
+            <Environment preset={isDark ? "city" : "studio"} environmentIntensity={isDark ? 1.2 : 0.6} blur={0.7} />
+            
+            <ambientLight intensity={isDark ? 0.2 : 0.6} color={COLORS.EMERALD_DEEP} />
+            <spotLight position={[20, 30, 15]} angle={0.3} penumbra={1} intensity={180} castShadow color="#FFF0DD" shadow-bias={-0.0001} shadow-mapSize={[1024, 1024]} />
+            <spotLight position={[-20, 10, -15]} intensity={120} color="#E0F7FA" angle={0.6} penumbra={0.5} />
+            <pointLight position={[0, -10, 5]} intensity={40} color={COLORS.EMERALD_LIGHT} distance={25} />
+
+            <group position={[0, -4, 0]}>
+              <InteractiveTree state={treeState} />
+              <SnowParticles isDark={isDark} />
+              {/* REMOVED ContactShadows in light mode to prevent horizontal black lines artifact */}
+              {isDark && (
+                <ContactShadows opacity={0.5} scale={40} blur={2} far={10} resolution={512} color="#000000" />
+              )}
+            </group>
+
+            <EffectComposer enableNormalPass={false}>
+              <Bloom luminanceThreshold={0.4} mipmapBlur intensity={1.2} radius={0.5} />
+              <Noise opacity={0.03} />
+              {/* Disable Vignette completely in light mode */}
+              <Vignette eskil={false} offset={0.1} darkness={isDark ? 1.1 : 0} />
+              <ToneMapping />
+            </EffectComposer>
+          </Canvas>
+        );
+      };
+
+      // 4. UIOverlay
+      const UIOverlay = ({ currentState, onToggle, isDark, toggleBg }) => {
+        const isTree = currentState === TreeState.TREE_SHAPE;
+        // Text color adaptation for background
+        const textColor = isDark ? "text-white/70" : "text-black/70";
+        const titleColor = isDark ? "text-[#D4AF37]" : "text-[#B8860B]";
+
+        return (
+          <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-8 z-10">
+            {/* Top Bar with Mode Toggle */}
+            <div className="absolute top-8 right-8 pointer-events-auto">
+                <button onClick={toggleBg} className="text-[#D4AF37] border border-[#D4AF37] rounded-full w-8 h-8 flex items-center justify-center hover:bg-[#D4AF37]/20 transition-colors">
+                    {isDark ? "☀" : "☾"}
+                </button>
+            </div>
+
+            <header className="flex flex-col items-center pt-10 opacity-0 animate-fade-in-down" style={{ animationFillMode: 'forwards' }}>
+              <h2 className={`${titleColor} tracking-[0.3em] text-xs font-bold uppercase mb-3 drop-shadow-md`}>The Holiday Collection</h2>
+              
+              {/* RESIZED & CENTERED TEXT: Down 2 sizes (5xl->3xl, 8xl->6xl) */}
+              <h1 className="flex flex-col md:flex-row items-center justify-center gap-2 md:gap-4 text-3xl md:text-6xl text-center drop-shadow-xl font-serif">
+                <span className="bg-clip-text text-transparent bg-gradient-to-b from-[#8B0000] to-[#500000] italic font-light" style={{ WebkitTextStroke: '1px #D4AF37' }}>Merry</span>
+                <span className="bg-clip-text text-transparent bg-gradient-to-b from-[#105040] to-[#012215] italic font-light" style={{ WebkitTextStroke: '1px #D4AF37' }}>Christmas</span>
+              </h1>
+            </header>
+            <footer className="flex flex-col items-center pb-16 pointer-events-auto">
+              <div className="flex flex-col items-center gap-6">
+                <p className={`${textColor} text-xs tracking-widest uppercase font-light`}>{isTree ? "Signature Tree Form" : "Scattered Elements"}</p>
+                <button onClick={onToggle} className="group relative px-12 py-4 border border-[#D4AF37] overflow-hidden transition-all duration-500 ease-out hover:bg-[#D4AF37]/20 backdrop-blur-sm cursor-pointer">
+                  <div className="absolute top-0 left-0 w-[1px] h-full bg-[#D4AF37] transition-all duration-300 group-hover:h-0" />
+                  <div className="absolute bottom-0 right-0 w-[1px] h-full bg-[#D4AF37] transition-all duration-300 group-hover:h-0" />
+                  <span className={`relative z-10 font-serif ${isDark ? 'text-white' : 'text-black'} tracking-[0.2em] text-sm group-hover:text-[#FFD700] transition-colors`}>{isTree ? "SCATTER" : "ASSEMBLE"}</span>
+                  <div className="absolute inset-0 -translate-x-full group-hover:animate-[shine_1.5s_infinite] bg-gradient-to-r from-transparent via-white/30 to-transparent z-0" />
+                </button>
+              </div>
+            </footer>
+          </div>
+        );
+      };
+
+      // 5. App
+      const App = () => {
+        const [treeState, setTreeState] = useState(TreeState.TREE_SHAPE);
+        const [isDark, setIsDark] = useState(true);
+        const toggleState = () => setTreeState(prev => prev === TreeState.TREE_SHAPE ? TreeState.SCATTERED : TreeState.TREE_SHAPE);
+        const toggleBg = () => setIsDark(prev => !prev);
+
+        return (
+          <div className="w-full h-screen relative overflow-hidden transition-colors duration-1000" style={{backgroundColor: isDark ? COLORS.BG_DARK : COLORS.BG_LIGHT}}>
+            <div className="absolute inset-0 z-0"><Experience treeState={treeState} isDark={isDark} /></div>
+            <UIOverlay currentState={treeState} onToggle={toggleState} isDark={isDark} toggleBg={toggleBg} />
+          </div>
+        );
+      };
+
+      const root = createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
